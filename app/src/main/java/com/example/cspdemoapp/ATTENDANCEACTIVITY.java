@@ -236,6 +236,7 @@ public class ATTENDANCEACTIVITY extends AppCompatActivity {
 
 //                System.out.println("ANALYSIS");
 
+
 //                //Process acquired image to detect faces
                 Task<List<Face>> result =
                         detector.process(image)
