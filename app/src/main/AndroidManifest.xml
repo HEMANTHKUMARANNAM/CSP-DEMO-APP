@@ -15,6 +15,12 @@
         android:theme="@style/Theme.CSPDEMOAPP"
         tools:targetApi="31">
         <activity
+            android:name=".Subjectselect"
+            android:exported="false" />
+        <activity
+            android:name=".Selectclass"
+            android:exported="false" />
+        <activity
             android:name=".ADMINACTIVITY"
             android:exported="false" />
         <activity

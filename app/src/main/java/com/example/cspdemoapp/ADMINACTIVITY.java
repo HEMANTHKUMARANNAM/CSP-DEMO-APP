@@ -25,6 +25,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.text.InputType;
+import android.util.Log;
 import android.util.Pair;
 import android.util.Size;
 import android.view.View;
@@ -57,6 +58,11 @@ import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.google.mlkit.vision.common.InputImage;
@@ -77,6 +83,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.ReadOnlyBufferException;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -151,7 +158,7 @@ public class ADMINACTIVITY extends AppCompatActivity {
                 builder.setTitle("Select Action:");
 
                 // add a checkbox list
-                String[] names= {"View Recognition List","Update Recognition List","Save Recognitions","Load Recognitions","Clear All Recognitions","Import Photo (Beta)","Hyperparameters","Developer Mode"};
+                String[] names= {"View Recognition List","Update Recognition List","Save Recognitions","Load Recognitions","Clear All Recognitions","Import Photo (Beta)","Hyperparameters","Developer Mode","firebase get" , "firebase save"};
 
                 builder.setItems(names, new DialogInterface.OnClickListener() {
                     @Override
@@ -182,6 +189,12 @@ public class ADMINACTIVITY extends AppCompatActivity {
                                 break;
                             case 7:
                                 developerMode();
+                                break;
+                            case 8:
+                                retrieveDataFromFirebase();
+                                break;
+                            case 9:
+                                storedatafirebasecall();
                                 break;
                         }
 
@@ -961,6 +974,8 @@ public class ADMINACTIVITY extends AppCompatActivity {
         else if (mode==0)
             jsonMap.putAll(readFromSP());
         String jsonString = new Gson().toJson(jsonMap);
+
+        Log.d("data stores" , jsonString);
 //        for (Map.Entry<String, Classifier.Recognition> entry : jsonMap.entrySet())
 //        {
 //            System.out.println("Entry Input "+entry.getKey()+" "+  entry.getValue().getExtra());
@@ -974,34 +989,149 @@ public class ADMINACTIVITY extends AppCompatActivity {
     }
 
     //Load Faces from Shared Preferences.Json String to Recognition object
-    private HashMap<String, Classifier.Recognition> readFromSP(){
+    private HashMap<String, Classifier.Recognition> readFromSP() {
         SharedPreferences sharedPreferences = getSharedPreferences("HashMap", MODE_PRIVATE);
         String defValue = new Gson().toJson(new HashMap<String, Classifier.Recognition>());
-        String json=sharedPreferences.getString("map",defValue);
-        // System.out.println("Output json"+json.toString());
-        TypeToken<HashMap<String,Classifier.Recognition>> token = new TypeToken<HashMap<String,Classifier.Recognition>>() {};
-        HashMap<String,Classifier.Recognition> retrievedMap=new Gson().fromJson(json,token.getType());
-        // System.out.println("Output map"+retrievedMap.toString());
+        String json = sharedPreferences.getString("map", defValue);
+        Log.d("Data Store", json);
 
-        //During type conversion and save/load procedure,format changes(eg float converted to double).
-        //So embeddings need to be extracted from it in required format(eg.double to float).
-        for (Map.Entry<String, Classifier.Recognition> entry : retrievedMap.entrySet())
-        {
-            float[][] output=new float[1][OUTPUT_SIZE];
-            ArrayList arrayList= (ArrayList) entry.getValue().getExtra();
+        TypeToken<HashMap<String, Classifier.Recognition>> token = new TypeToken<HashMap<String, Classifier.Recognition>>() {};
+        HashMap<String, Classifier.Recognition> retrievedMap = new Gson().fromJson(json, token.getType());
+
+        // During type conversion and save/load procedure, format changes (e.g., float converted to double).
+        // So embeddings need to be extracted from it in the required format (e.g., double to float).
+        for (Map.Entry<String, Classifier.Recognition> entry : retrievedMap.entrySet()) {
+            float[][] output = new float[1][OUTPUT_SIZE];
+            ArrayList arrayList = (ArrayList) entry.getValue().getExtra();
             arrayList = (ArrayList) arrayList.get(0);
             for (int counter = 0; counter < arrayList.size(); counter++) {
-                output[0][counter]= ((Double) arrayList.get(counter)).floatValue();
+                output[0][counter] = ((Double) arrayList.get(counter)).floatValue();
             }
             entry.getValue().setExtra(output);
 
-            //System.out.println("Entry output "+entry.getKey()+" "+entry.getValue().getExtra() );
-
+            // Printing the data in a readable format
+            Log.d("Recognition Entry", "Key: " + entry.getKey() +
+                    ", ID: " + entry.getValue().getId() +
+                    ", Title: " + entry.getValue().getTitle() +
+                    ", Distance: " + (entry.getValue().distance != null ? String.format("%.2f", entry.getValue().distance) : "N/A") +
+                    ", Extra (Embeddings): " + Arrays.deepToString((float[][]) entry.getValue().getExtra()));
         }
-//        System.out.println("OUTPUT"+ Arrays.deepToString(outut));
+
         Toast.makeText(context, "Recognitions Loaded", Toast.LENGTH_SHORT).show();
+
+
         return retrievedMap;
     }
+
+    private void storedatafirebasecall()
+    {
+
+        // Store the retrieved map to Firebase
+        storeDataToFirebase(readFromSP());
+    }
+
+
+    // Method to store the data to Firebase Realtime Database
+    private void storeDataToFirebase(HashMap<String, Classifier.Recognition> dataMap) {
+        // Get a reference to the Firebase Realtime Database
+        DatabaseReference databaseRef = FirebaseDatabase.getInstance().getReference("recognitions");
+
+        // Convert the HashMap to JSON using Gson
+        String jsonData = new Gson().toJson(dataMap);
+
+        // Store the JSON data in Firebase
+        databaseRef.setValue(jsonData).addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                Toast.makeText(context, "Data stored in Firebase successfully!", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(context, "Failed to store data in Firebase: " + task.getException(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    // Method to retrieve data from Firebase Realtime Database and save it to SharedPreferences
+    private void retrieveDataFromFirebase() {
+        // Get a reference to the Firebase Realtime Database
+        DatabaseReference databaseRef = FirebaseDatabase.getInstance().getReference("recognitions");
+
+        databaseRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                try {
+                    // Check if data exists in Firebase
+                    if (dataSnapshot.exists()) {
+                        // Get the JSON data from Firebase
+                        String jsonData = dataSnapshot.getValue(String.class);
+
+                        if (jsonData != null) {
+                            // Convert the JSON data back to a HashMap using Gson
+                            TypeToken<HashMap<String, Classifier.Recognition>> token = new TypeToken<HashMap<String, Classifier.Recognition>>() {};
+                            HashMap<String, Classifier.Recognition> retrievedMap = new Gson().fromJson(jsonData, token.getType());
+
+                            if (retrievedMap != null) {
+                                // Convert ArrayList to float[][] format
+                                for (Map.Entry<String, Classifier.Recognition> entry : retrievedMap.entrySet()) {
+                                    Object extraData = entry.getValue().getExtra();
+                                    if (extraData instanceof ArrayList) {
+                                        ArrayList<ArrayList<Double>> arrayList = (ArrayList<ArrayList<Double>>) extraData;
+                                        float[][] output = new float[arrayList.size()][arrayList.get(0).size()];
+
+                                        for (int i = 0; i < arrayList.size(); i++) {
+                                            for (int j = 0; j < arrayList.get(i).size(); j++) {
+                                                output[i][j] = arrayList.get(i).get(j).floatValue();
+                                            }
+                                        }
+
+                                        entry.getValue().setExtra(output);
+                                    }
+
+                                    // Log the retrieved data
+                                    Log.d("Recognition Entry", "Key: " + entry.getKey() +
+                                            ", ID: " + entry.getValue().getId() +
+                                            ", Title: " + entry.getValue().getTitle() +
+                                            ", Distance: " + (entry.getValue().distance != null ? String.format("%.2f", entry.getValue().distance) : "N/A") +
+                                            ", Extra (Embeddings): " + Arrays.deepToString((float[][]) entry.getValue().getExtra()));
+                                }
+
+//                                clearnameList();
+
+//                                insertToSP(registered, 1);
+
+                                // Save the retrieved data to SharedPreferences
+                                insertToSP(retrievedMap, 0); // mode 0: save all to SharedPreferences
+
+                                registered.putAll(readFromSP());
+
+
+                                Toast.makeText(context, "Data retrieved from Firebase and saved to SharedPreferences successfully!", Toast.LENGTH_SHORT).show();
+                            } else {
+                                Log.e("FirebaseData", "Failed to convert JSON data to HashMap.");
+                                Toast.makeText(context, "Data format error: Could not convert to HashMap.", Toast.LENGTH_SHORT).show();
+                            }
+                        } else {
+                            Log.e("FirebaseData", "JSON data is null.");
+                            Toast.makeText(context, "Data not found in Firebase.", Toast.LENGTH_SHORT).show();
+                        }
+                    } else {
+                        Log.e("FirebaseData", "Data snapshot does not exist.");
+                        Toast.makeText(context, "No data available in Firebase.", Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception e) {
+                    Log.e("FirebaseDataError", "Error retrieving data: " + e.getMessage());
+                    Toast.makeText(context, "Error retrieving data from Firebase.", Toast.LENGTH_SHORT).show();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+                Log.e("FirebaseDataError", "Database error: " + databaseError.getMessage());
+                Toast.makeText(context, "Failed to retrieve data from Firebase: " + databaseError.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+
+
 
     //Load Photo from phone storage
     private void loadphoto()

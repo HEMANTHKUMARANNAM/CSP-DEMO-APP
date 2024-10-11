@@ -15,7 +15,7 @@ public interface Classifier {
         private final String title;
 
 
-        private final Float distance;
+        final Float distance;
         private Object extra;
 
         public Recognition(
@@ -26,6 +26,21 @@ public interface Classifier {
             this.extra = null;
 
         }
+
+
+        public String getId()
+        {
+            return id;
+        }
+
+        public String getTitle()
+        {
+            return title;
+        }
+
+
+
+
 
         public void setExtra(Object extra) {
             this.extra = extra;
