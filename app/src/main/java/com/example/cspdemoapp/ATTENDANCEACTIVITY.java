@@ -3,6 +3,7 @@ package com.example.cspdemoapp;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
@@ -20,6 +21,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.util.Pair;
 import android.util.Size;
+import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -44,6 +47,11 @@ import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.google.mlkit.vision.common.InputImage;
@@ -62,7 +70,10 @@ import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.ReadOnlyBufferException;
 import java.nio.channels.FileChannel;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -109,6 +120,8 @@ public class ATTENDANCEACTIVITY extends AppCompatActivity {
 
     String modelFile="mobile_face_net.tflite";
 
+    Button end;
+
 
 
     PreviewView previewView;
@@ -128,6 +141,19 @@ public class ATTENDANCEACTIVITY extends AppCompatActivity {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
+        });
+
+        end = findViewById(R.id.button9);
+
+        end.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                Toast.makeText(context, "Attendance saving.....", Toast.LENGTH_SHORT).show();
+
+                fetchRegisterNumbers();
+
+            }
         });
 
         //Initialize Face Detector
@@ -633,5 +659,92 @@ public class ATTENDANCEACTIVITY extends AppCompatActivity {
 
         return neighbour_list;
 
+    }
+
+    // Method to fetch register numbers
+    public void fetchRegisterNumbers() {
+        DatabaseReference databaseRef = FirebaseDatabase.getInstance().getReference("attendance");
+        List<String> registerNumbers = new ArrayList<>();
+        databaseRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                for (DataSnapshot registerSnapshot : dataSnapshot.getChildren()) {
+                    registerNumbers.add(registerSnapshot.getKey());
+                }
+
+                addattendance(registerNumbers);
+
+
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                Log.e("FirebaseError", "Database error: " + databaseError.getMessage());
+            }
+        });
+    }
+
+    public void addattendance(List<String> registernumbers)
+    {
+        Log.d("meow143" , DATA.time);
+        for( String num : registernumbers )
+        {
+            addAttendanceEntry(num, convertToCustomFormat(DATA.time) + DATA.subject , "A");
+        }
+        addpresentdata();
+    }
+
+    public void addpresentdata()
+    {
+        for( String num : set)
+        {
+            addAttendanceEntry(num, convertToCustomFormat(DATA.time) + DATA.subject , "P");
+        }
+        updateUI();
+    }
+
+    public static String convertToCustomFormat(String dateStr) {
+        try {
+            // Parse the input date string to a Date object
+            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            Date date = inputFormat.parse(dateStr);
+
+            // Convert the Date object to the desired format
+            SimpleDateFormat outputFormat = new SimpleDateFormat("HH:mm:dd:MM:yyyy");
+            return outputFormat.format(date);
+        } catch (ParseException e) {
+            e.printStackTrace();
+            return null; // Return null if there is a parsing error
+        }
+    }
+
+    // Method to add a new attendance entry for a specific register number
+    public void addAttendanceEntry(String registerNumber, String attendanceKey, String status) {
+        // Create a reference for the specific register number
+        DatabaseReference studentRef = FirebaseDatabase.getInstance().getReference("attendance").child(registerNumber);
+
+        // Add the new attendance entry to the student
+        studentRef.child(attendanceKey).setValue(status)
+                .addOnSuccessListener(aVoid -> {
+                    // Attendance entry successfully added
+                    System.out.println("Attendance entry added successfully for " + registerNumber);
+                })
+                .addOnFailureListener(e -> {
+                    // Failed to add the attendance entry
+                    System.err.println("Error adding attendance entry: " + e.getMessage());
+                });
+    }
+
+    // Method to update the UI after all Firebase calls are complete
+    private void updateUI() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                // Perform your UI update here, safely on the main thread
+                Intent intent =new Intent(ATTENDANCEACTIVITY.this,MainActivity.class);
+                startActivity(intent);
+                finish();
+            }
+        });
     }
 }
